@@ -1,0 +1,1130 @@
+openapi: 3.0.1
+info:
+  version: 2.0.0
+  title: Hotel Management System API
+  description: >
+    API for managing room bookings in a Hotel Management System.
+    Supports fetching room categories, querying available rooms,
+    creating reservations, extending guest stays, cancelling bookings
+    (soft delete), and restoring cancelled bookings.
+
+tags:
+  - name: Room Management
+    description: Operations related to room categories and available rooms
+  - name: Booking Management
+    description: Operations related to creating, updating, cancelling, and restoring bookings
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PATHS
+# ─────────────────────────────────────────────────────────────────────────────
+paths:
+
+  # ── 1. GET /api/v1/rooms/categories ────────────────────────────────────────
+  /api/v1/rooms/categories:
+    get:
+      summary: Get All Room Categories
+      description: >
+        Returns all active room categories (e.g. Standard, Deluxe, Suite).
+        Use this endpoint first to get the room_category_uuid before calling
+        the Get Available Rooms endpoint.
+      operationId: getRoomCategories
+      tags:
+        - Room Management
+      responses:
+        '200':
+          description: Room categories retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomCategoryListResponse'
+              example:
+                status: "Success"
+                code: 200
+                message: "Room categories retrieved successfully"
+                data:
+                  categories:
+                    - room_category_uuid: "a1b2c3d4-0001-0001-0001-000000000001"
+                      room_category_name: "Standard"
+                    - room_category_uuid: "a1b2c3d4-0002-0002-0002-000000000002"
+                      room_category_name: "Deluxe"
+                    - room_category_uuid: "a1b2c3d4-0003-0003-0003-000000000003"
+                      room_category_name: "Suite"
+                  total: 3
+                request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                timestamp: "2025-06-01T08:00:00Z"
+        '404':
+          description: No room categories found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: "Error"
+                code: 404
+                message: "No room categories found"
+                errors:
+                  - message: "No active room categories exist in the system"
+                    code: "HMS_REC_404"
+                request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                timestamp: "2025-06-01T08:00:00Z"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: "Error"
+                code: 500
+                message: "Internal server error"
+                errors:
+                  - message: "Failed to fetch room categories"
+                    code: "HMS_DB_001"
+                request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                timestamp: "2025-06-01T08:00:00Z"
+
+
+  # ── 2. GET /api/v1/rooms/available ─────────────────────────────────────────
+  /api/v1/rooms/available:
+    get:
+      summary: Get Available Rooms
+      description: >
+        Returns a paginated list of available rooms for the given date range.
+        Only check_in and check_out are mandatory. Filtering by room_category_uuid
+        and capacity is optional — omitting them returns all available rooms
+        across all categories and capacities. Use room_uuid from the response
+        when creating a booking.
+
+        Pagination defaults: page=1, limit=10 (maximum limit is 100).
+
+        Example calls:
+          All available rooms:
+            GET /api/v1/rooms/available?check_in=2025-06-01T14:00:00Z&check_out=2025-06-05T12:00:00Z
+
+          With category filter:
+            GET /api/v1/rooms/available?check_in=2025-06-01T14:00:00Z&check_out=2025-06-05T12:00:00Z&room_category_uuid=a1b2c3d4-0002-0002-0002-000000000002
+
+          With all filters and pagination:
+            GET /api/v1/rooms/available?check_in=2025-06-01T14:00:00Z&check_out=2025-06-05T12:00:00Z&room_category_uuid=a1b2c3d4-0002-0002-0002-000000000002&capacity=2&page=2&limit=5
+      operationId: getAvailableRooms
+      tags:
+        - Room Management
+      parameters:
+        - name: check_in
+          in: query
+          required: true
+          description: Check-in date and time in RFC3339 format
+          schema:
+            type: string
+            format: date-time
+            example: "2025-06-01T14:00:00Z"
+        - name: check_out
+          in: query
+          required: true
+          description: Check-out date and time in RFC3339 format; must be after check_in
+          schema:
+            type: string
+            format: date-time
+            example: "2025-06-05T12:00:00Z"
+        - name: room_category_uuid
+          in: query
+          required: false
+          description: >
+            (Optional) UUID of the room category to filter by.
+            Obtain valid UUIDs from GET /api/v1/rooms/categories.
+            If omitted, rooms from all categories are returned.
+          schema:
+            type: string
+            format: uuid
+            example: "a1b2c3d4-0002-0002-0002-000000000002"
+        - name: capacity
+          in: query
+          required: false
+          description: >
+            (Optional) Minimum number of guests the room must accommodate.
+            If omitted, rooms of all capacities are returned.
+          schema:
+            type: integer
+            minimum: 1
+            example: 2
+        - name: page
+          in: query
+          required: false
+          description: >
+            (Optional) Page number to retrieve. Must be greater than 0.
+            Defaults to 1 if not provided.
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+            example: 1
+        - name: limit
+          in: query
+          required: false
+          description: >
+            (Optional) Number of rooms to return per page. Must be between 1 and 100.
+            Defaults to 10 if not provided.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+            example: 10
+      responses:
+        '200':
+          description: Available rooms retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomListResponse'
+              example:
+                status: "Success"
+                code: 200
+                message: "Available rooms retrieved successfully"
+                data:
+                  rooms:
+                    - room_uuid: "b2c3d4e5-0001-0001-0001-000000000001"
+                      room_no: "DLX-201"
+                      price: 150.00
+                    - room_uuid: "b2c3d4e5-0002-0002-0002-000000000002"
+                      room_no: "DLX-202"
+                      price: 150.00
+                  pagination:
+                    page: 1
+                    limit: 10
+                    total_records: 50
+                    total_pages: 5
+                    has_next_page: true
+                    has_previous_page: false
+                request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                timestamp: "2025-06-01T08:05:00Z"
+        '400':
+          description: Bad request — missing mandatory parameters or invalid parameter values
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missing_check_in:
+                  summary: Missing mandatory check_in
+                  value:
+                    status: "Error"
+                    code: 400
+                    message: "Validation failed for the request"
+                    errors:
+                      - field: "check_in"
+                        message: "check_in is required"
+                        code: "HMS_VAL_001"
+                    request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                    timestamp: "2025-06-01T08:05:00Z"
+                invalid_page:
+                  summary: Invalid pagination values
+                  value:
+                    status: "Error"
+                    code: 400
+                    message: "Validation failed for the request"
+                    errors:
+                      - field: "page"
+                        message: "page must be greater than 0"
+                        code: "HMS_VAL_001"
+                      - field: "limit"
+                        message: "limit must be between 1 and 100"
+                        code: "HMS_VAL_001"
+                    request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                    timestamp: "2025-06-01T08:05:00Z"
+        '404':
+          description: No available rooms found for the given filters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: "Error"
+                code: 404
+                message: "No rooms found for the given filters"
+                errors:
+                  - message: "No available rooms for the selected dates and filters"
+                    code: "HMS_REC_404"
+                request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                timestamp: "2025-06-01T08:05:00Z"
+        '422':
+          description: Unprocessable entity — invalid date format or check_out is before check_in
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: "Error"
+                code: 422
+                message: "Validation failed"
+                errors:
+                  - field: "check_out"
+                    message: "check_out must be after check_in"
+                    code: "HMS_VAL_003"
+                request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                timestamp: "2025-06-01T08:05:00Z"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: "Error"
+                code: 500
+                message: "Internal server error"
+                errors:
+                  - message: "Failed to fetch available rooms"
+                    code: "HMS_DB_001"
+                request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                timestamp: "2025-06-01T08:05:00Z"
+
+
+  # ── 3. POST /api/v1/bookings ───────────────────────────────────────────────
+  /api/v1/bookings:
+    post:
+      summary: Create a Room Booking
+      description: >
+        Creates a new booking for a guest. If the guest's phone number already
+        exists in the system, the existing guest record is reused. Otherwise a
+        new guest is created automatically. Returns booking_uuid, guest_uuid,
+        room_uuid, room_no, total price, and total days.
+      operationId: createBooking
+      tags:
+        - Booking Management
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBookingRequest'
+            example:
+              guest:
+                guest_name: "Nanthakumar"
+                age: 28
+                address: "123 Main Street, Kuala Lumpur"
+                phone_number: "+60123456789"
+              room_uuid: "b2c3d4e5-0001-0001-0001-000000000001"
+              check_in: "2025-06-01T14:00:00Z"
+              check_out: "2025-06-05T12:00:00Z"
+      responses:
+        '201':
+          description: Booking created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingResponse'
+              example:
+                status: "Success"
+                code: 201
+                message: "Booking created successfully"
+                data:
+                  booking_uuid: "c3d4e5f6-0001-0001-0001-000000000001"
+                  guest_uuid: "d4e5f6a7-0001-0001-0001-000000000001"
+                  room_uuid: "b2c3d4e5-0001-0001-0001-000000000001"
+                  room_no: "DLX-201"
+                  check_in: "2025-06-01T14:00:00Z"
+                  check_out: "2025-06-05T12:00:00Z"
+                  total_price: 600.00
+                  total_days: 4
+                request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                timestamp: "2025-06-01T08:10:00Z"
+        '400':
+          description: Bad request — missing fields, invalid JSON, or room not available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: "Error"
+                code: 400
+                message: "Validation failed for the request"
+                errors:
+                  - field: "room_uuid"
+                    message: "room_uuid is required"
+                    code: "HMS_VAL_001"
+                  - field: "guest.guest_name"
+                    message: "guest_name is required"
+                    code: "HMS_VAL_001"
+                request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                timestamp: "2025-06-01T08:10:00Z"
+        '404':
+          description: Room not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: "Error"
+                code: 404
+                message: "Room not found"
+                errors:
+                  - field: "room_uuid"
+                    message: "No room found for the given UUID"
+                    code: "HMS_REC_404"
+                request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                timestamp: "2025-06-01T08:10:00Z"
+        '409':
+          description: Conflict — room already booked for the selected dates
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: "Error"
+                code: 409
+                message: "Room is not available for the selected dates"
+                errors:
+                  - field: "room_uuid"
+                    message: "Room is already booked for the selected date range"
+                    code: "HMS_CONFLICT_409"
+                request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                timestamp: "2025-06-01T08:10:00Z"
+        '422':
+          description: Unprocessable entity — invalid date format or check_out before check_in
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: "Error"
+                code: 422
+                message: "Validation failed"
+                errors:
+                  - field: "check_out"
+                    message: "check_out must be after check_in"
+                    code: "HMS_VAL_003"
+                request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                timestamp: "2025-06-01T08:10:00Z"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: "Error"
+                code: 500
+                message: "Internal server error"
+                errors:
+                  - message: "Failed to create booking"
+                    code: "HMS_DB_001"
+                request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                timestamp: "2025-06-01T08:10:00Z"
+
+
+  # ── 4. PUT /api/v1/bookings/extend ────────────────────────────────────────
+  /api/v1/bookings/extend:
+    put:
+      summary: Extend Guest Stay
+      description: >
+        Extends the check-out date of an existing active booking.
+        The new check_out must be after the current check_out date.
+        Returns updated booking details with recalculated total price and days.
+      operationId: extendBooking
+      tags:
+        - Booking Management
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExtendBookingRequest'
+            example:
+              booking_uuid: "c3d4e5f6-0001-0001-0001-000000000001"
+              check_out: "2025-06-08T12:00:00Z"
+      responses:
+        '200':
+          description: Booking extended successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingResponse'
+              example:
+                status: "Success"
+                code: 200
+                message: "Booking extended successfully"
+                data:
+                  booking_uuid: "c3d4e5f6-0001-0001-0001-000000000001"
+                  guest_uuid: "d4e5f6a7-0001-0001-0001-000000000001"
+                  room_uuid: "b2c3d4e5-0001-0001-0001-000000000001"
+                  room_no: "DLX-201"
+                  check_in: "2025-06-01T14:00:00Z"
+                  check_out: "2025-06-08T12:00:00Z"
+                  total_price: 1050.00
+                  total_days: 7
+                request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                timestamp: "2025-06-02T09:00:00Z"
+        '400':
+          description: Bad request — missing fields or booking is cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: "Error"
+                code: 400
+                message: "Cannot extend a cancelled booking"
+                errors:
+                  - field: "booking_uuid"
+                    message: "Booking is not active"
+                    code: "HMS_VAL_002"
+                request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                timestamp: "2025-06-02T09:00:00Z"
+        '404':
+          description: Booking not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: "Error"
+                code: 404
+                message: "Booking not found"
+                errors:
+                  - field: "booking_uuid"
+                    message: "No booking found for the given UUID"
+                    code: "HMS_REC_404"
+                request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                timestamp: "2025-06-02T09:00:00Z"
+        '409':
+          description: Conflict — another booking overlaps the extended period
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: "Error"
+                code: 409
+                message: "Cannot extend booking"
+                errors:
+                  - field: "check_out"
+                    message: "Room is already booked during the extended period"
+                    code: "HMS_CONFLICT_409"
+                request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                timestamp: "2025-06-02T09:00:00Z"
+        '422':
+          description: Unprocessable entity — new check_out is not after current check_out
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: "Error"
+                code: 422
+                message: "Validation failed"
+                errors:
+                  - field: "check_out"
+                    message: "new check_out must be after the current check_out"
+                    code: "HMS_VAL_003"
+                request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                timestamp: "2025-06-02T09:00:00Z"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: "Error"
+                code: 500
+                message: "Internal server error"
+                errors:
+                  - message: "Failed to extend booking"
+                    code: "HMS_DB_001"
+                request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                timestamp: "2025-06-02T09:00:00Z"
+
+
+  # ── 5. PATCH /api/v1/bookings/cancel ──────────────────────────────────────
+  /api/v1/bookings/cancel:
+    patch:
+      summary: Cancel a Booking
+      description: >
+        Soft-cancels a booking by setting is_active to false.
+        The record is retained in the database and can be restored.
+      operationId: cancelBooking
+      tags:
+        - Booking Management
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingActionRequest'
+            example:
+              booking_uuid: "c3d4e5f6-0001-0001-0001-000000000001"
+      responses:
+        '200':
+          description: Booking cancelled successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                status: "Success"
+                code: 200
+                message: "Booking cancelled successfully"
+                data:
+                  message: "Booking cancelled"
+                request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                timestamp: "2025-06-03T10:00:00Z"
+        '400':
+          description: Bad request — missing booking_uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: "Error"
+                code: 400
+                message: "Validation failed for the request"
+                errors:
+                  - field: "booking_uuid"
+                    message: "booking_uuid is required"
+                    code: "HMS_VAL_001"
+                request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                timestamp: "2025-06-03T10:00:00Z"
+        '404':
+          description: Booking not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: "Error"
+                code: 404
+                message: "Booking not found"
+                errors:
+                  - field: "booking_uuid"
+                    message: "No booking found for the given UUID"
+                    code: "HMS_REC_404"
+                request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                timestamp: "2025-06-03T10:00:00Z"
+        '409':
+          description: Conflict — booking is already cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: "Error"
+                code: 409
+                message: "Booking is already cancelled"
+                errors:
+                  - field: "booking_uuid"
+                    message: "Booking is already cancelled"
+                    code: "HMS_CONFLICT_409"
+                request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                timestamp: "2025-06-03T10:00:00Z"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: "Error"
+                code: 500
+                message: "Internal server error"
+                errors:
+                  - message: "Failed to cancel booking"
+                    code: "HMS_DB_001"
+                request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                timestamp: "2025-06-03T10:00:00Z"
+
+
+  # ── 6. PATCH /api/v1/bookings/restore ─────────────────────────────────────
+  /api/v1/bookings/restore:
+    patch:
+      summary: Restore a Cancelled Booking
+      description: >
+        Recovers an accidentally cancelled (soft-deleted) booking by setting
+        is_active back to true. No room availability recheck is performed —
+        the booking is restored directly.
+
+        Flow:
+          1. Validate booking_uuid is provided
+          2. Check booking exists in the system
+          3. Verify booking is currently cancelled (is_active = false)
+          4. Restore booking (set is_active = true)
+          5. Return success response
+      operationId: restoreBooking
+      tags:
+        - Booking Management
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingActionRequest'
+            example:
+              booking_uuid: "c3d4e5f6-0001-0001-0001-000000000001"
+      responses:
+        '200':
+          description: Booking restored successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                status: "Success"
+                code: 200
+                message: "Booking restored successfully"
+                data:
+                  message: "Booking restored"
+                request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                timestamp: "2025-06-04T11:00:00Z"
+        '400':
+          description: Bad request — missing booking_uuid or booking is already active
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missing_uuid:
+                  summary: booking_uuid not provided
+                  value:
+                    status: "Error"
+                    code: 400
+                    message: "Validation failed for the request"
+                    errors:
+                      - field: "booking_uuid"
+                        message: "booking_uuid is required"
+                        code: "HMS_VAL_001"
+                    request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                    timestamp: "2025-06-04T11:00:00Z"
+                already_active:
+                  summary: Booking is already active
+                  value:
+                    status: "Error"
+                    code: 400
+                    message: "Booking is already active"
+                    errors:
+                      - field: "booking_uuid"
+                        message: "Only cancelled bookings can be restored"
+                        code: "HMS_VAL_002"
+                    request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                    timestamp: "2025-06-04T11:00:00Z"
+        '404':
+          description: Booking not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: "Error"
+                code: 404
+                message: "Booking not found"
+                errors:
+                  - field: "booking_uuid"
+                    message: "No booking found for the given UUID"
+                    code: "HMS_REC_404"
+                request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                timestamp: "2025-06-04T11:00:00Z"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: "Error"
+                code: 500
+                message: "Internal server error"
+                errors:
+                  - message: "Failed to restore booking"
+                    code: "HMS_DB_001"
+                request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                timestamp: "2025-06-04T11:00:00Z"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# COMPONENTS
+# ─────────────────────────────────────────────────────────────────────────────
+components:
+  schemas:
+
+    # ── Request Schemas ───────────────────────────────────────────────────────
+
+    CreateBookingRequest:
+      type: object
+      required:
+        - guest
+        - room_uuid
+        - check_in
+        - check_out
+      properties:
+        guest:
+          $ref: '#/components/schemas/GuestRequest'
+        room_uuid:
+          type: string
+          format: uuid
+          description: UUID of the room to book (from Get Available Rooms response)
+          example: "b2c3d4e5-0001-0001-0001-000000000001"
+        check_in:
+          type: string
+          format: date-time
+          description: Check-in date and time in RFC3339 format
+          example: "2025-06-01T14:00:00Z"
+        check_out:
+          type: string
+          format: date-time
+          description: Check-out date and time in RFC3339 format; must be after check_in
+          example: "2025-06-05T12:00:00Z"
+
+    GuestRequest:
+      type: object
+      required:
+        - guest_name
+        - age
+        - address
+        - phone_number
+      properties:
+        guest_name:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Full name of the guest
+          example: "Nanthakumar"
+        age:
+          type: integer
+          minimum: 1
+          maximum: 150
+          description: Age of the guest
+          example: 28
+        address:
+          type: string
+          description: Address of the guest
+          example: "123 Main Street, Kuala Lumpur"
+        phone_number:
+          type: string
+          maxLength: 15
+          description: Phone number (used to identify existing guests)
+          example: "+60123456789"
+
+    ExtendBookingRequest:
+      type: object
+      required:
+        - booking_uuid
+        - check_out
+      properties:
+        booking_uuid:
+          type: string
+          format: uuid
+          description: UUID of the booking to extend
+          example: "c3d4e5f6-0001-0001-0001-000000000001"
+        check_out:
+          type: string
+          format: date-time
+          description: New check-out date and time; must be after the current check_out
+          example: "2025-06-08T12:00:00Z"
+
+    BookingActionRequest:
+      type: object
+      required:
+        - booking_uuid
+      properties:
+        booking_uuid:
+          type: string
+          format: uuid
+          description: UUID of the booking to act on (cancel or restore)
+          example: "c3d4e5f6-0001-0001-0001-000000000001"
+
+    # ── Response Data Schemas ─────────────────────────────────────────────────
+
+    RoomCategoryItem:
+      type: object
+      properties:
+        room_category_uuid:
+          type: string
+          format: uuid
+          description: Public UUID of the room category
+          example: "a1b2c3d4-0002-0002-0002-000000000002"
+        room_category_name:
+          type: string
+          description: Display name of the room category
+          example: "Deluxe"
+
+    RoomAvailabilityItem:
+      type: object
+      properties:
+        room_uuid:
+          type: string
+          format: uuid
+          description: Public UUID of the room (use this for booking)
+          example: "b2c3d4e5-0001-0001-0001-000000000001"
+        room_no:
+          type: string
+          description: Customer-visible room number (e.g. 101A, DLX-301)
+          example: "DLX-201"
+        price:
+          type: number
+          format: float
+          description: Price per night for this room
+          example: 150.00
+
+    BookingData:
+      type: object
+      properties:
+        booking_uuid:
+          type: string
+          format: uuid
+          description: Public UUID of the booking
+          example: "c3d4e5f6-0001-0001-0001-000000000001"
+        guest_uuid:
+          type: string
+          format: uuid
+          description: Public UUID of the guest
+          example: "d4e5f6a7-0001-0001-0001-000000000001"
+        room_uuid:
+          type: string
+          format: uuid
+          description: Public UUID of the booked room
+          example: "b2c3d4e5-0001-0001-0001-000000000001"
+        room_no:
+          type: string
+          description: Customer-visible room number
+          example: "DLX-201"
+        check_in:
+          type: string
+          format: date-time
+          description: Confirmed check-in date and time
+          example: "2025-06-01T14:00:00Z"
+        check_out:
+          type: string
+          format: date-time
+          description: Confirmed check-out date and time
+          example: "2025-06-05T12:00:00Z"
+        total_price:
+          type: number
+          format: float
+          description: Total computed cost for the entire stay
+          example: 600.00
+        total_days:
+          type: integer
+          description: Total number of nights
+          example: 4
+
+    # ── Response Envelope Schemas ─────────────────────────────────────────────
+
+    RoomCategoryListResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "Success"
+        code:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: "Room categories retrieved successfully"
+        data:
+          type: object
+          properties:
+            categories:
+              type: array
+              items:
+                $ref: '#/components/schemas/RoomCategoryItem'
+            total:
+              type: integer
+              example: 3
+        request_id:
+          type: string
+          format: uuid
+          example: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+        timestamp:
+          type: string
+          format: date-time
+          example: "2025-06-01T08:00:00Z"
+
+    PaginationMeta:
+      type: object
+      description: Pagination metadata returned with paginated list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        limit:
+          type: integer
+          description: Number of records per page
+          example: 10
+        total_records:
+          type: integer
+          description: Total number of available rooms matching the filters
+          example: 50
+        total_pages:
+          type: integer
+          description: Total number of pages based on limit
+          example: 5
+        has_next_page:
+          type: boolean
+          description: True if there is a next page
+          example: true
+        has_previous_page:
+          type: boolean
+          description: True if there is a previous page
+          example: false
+
+    RoomListResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "Success"
+        code:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: "Available rooms retrieved successfully"
+        data:
+          type: object
+          properties:
+            rooms:
+              type: array
+              items:
+                $ref: '#/components/schemas/RoomAvailabilityItem'
+            pagination:
+              $ref: '#/components/schemas/PaginationMeta'
+        request_id:
+          type: string
+          format: uuid
+          example: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+        timestamp:
+          type: string
+          format: date-time
+          example: "2025-06-01T08:05:00Z"
+
+    BookingResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "Success"
+        code:
+          type: integer
+          example: 201
+        message:
+          type: string
+          example: "Booking created successfully"
+        data:
+          $ref: '#/components/schemas/BookingData'
+        request_id:
+          type: string
+          format: uuid
+          example: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+        timestamp:
+          type: string
+          format: date-time
+          example: "2025-06-01T08:10:00Z"
+
+    MessageResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "Success"
+        code:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: "Booking cancelled successfully"
+        data:
+          type: object
+          properties:
+            message:
+              type: string
+              example: "Booking cancelled"
+        request_id:
+          type: string
+          format: uuid
+          example: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+        timestamp:
+          type: string
+          format: date-time
+          example: "2025-06-03T10:00:00Z"
+
+    # ── Error Schema ──────────────────────────────────────────────────────────
+
+    ErrorDetail:
+      type: object
+      properties:
+        field:
+          type: string
+          description: Field that caused the error (omitted for non-field errors)
+          example: "check_out"
+        message:
+          type: string
+          description: Human-readable error explanation
+          example: "check_out must be after check_in"
+        code:
+          type: string
+          description: Application error code
+          example: "HMS_VAL_001"
+
+    ErrorResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "Error"
+        code:
+          type: integer
+          example: 400
+        message:
+          type: string
+          example: "Validation failed for the request"
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+        request_id:
+          type: string
+          format: uuid
+          example: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+        timestamp:
+          type: string
+          format: date-time
+          example: "2025-06-01T08:00:00Z"
+
+  # ── Application Error Codes Reference ──────────────────────────────────────
+  # HMS_REQ_001      → Invalid JSON format
+  # HMS_VAL_001      → Validation failed (missing/invalid field)
+  # HMS_VAL_002      → Bad request (business rule violation)
+  # HMS_VAL_003      → Unprocessable entity (date logic errors)
+  # HMS_REC_404      → Record not found
+  # HMS_CONFLICT_409 → Conflict (already cancelled, room unavailable)
+  # HMS_DB_001       → Internal server / database error
+  # HMS_DB_002       → Database not reachable
+
+  # ── DTO Reference: GetAvailableRoomsRequest ──────────────────────────────
+  # Mirrors the query parameters of GET /api/v1/rooms/available
+  #
+  # Field               Type      Required   Validation
+  # ──────────────────────────────────────────────────────────────────────────
+  # check_in            string    YES        RFC3339 date-time
+  # check_out           string    YES        RFC3339 date-time; must be after check_in
+  # room_category_uuid  string    NO         Valid UUID; if provided must exist in DB
+  # capacity            integer   NO         min=1 if provided
+  # page                integer   NO         min=1; default=1
+  # limit               integer   NO         min=1, max=100; default=10
+
+  # ── DTO Reference: RoomListData (response data block) ────────────────────
+  # Field       Type               Description
+  # ────────────────────────────────────────────────────────────────────────
+  # rooms       []RoomAvailabilityItem   Paginated list of available rooms
+  # pagination  PaginationMeta           Page/limit/total metadata
+
+  # ── DTO Reference: PaginationMeta ────────────────────────────────────────
+  # Field               Type     Description
+  # ────────────────────────────────────────────────────────────────────────
+  # page                integer  Current page number
+  # limit               integer  Records per page
+  # total_records       integer  Total matching records across all pages
+  # total_pages         integer  Calculated as ceil(total_records / limit)
+  # has_next_page       boolean  True if page < total_pages
+  # has_previous_page   boolean  True if page > 1

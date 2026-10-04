@@ -1,0 +1,60 @@
+# =============================================================================
+# Hotel Management System API — Docker Compose
+# Services: postgres (db), hotel-api (app)
+# Usage: docker compose up --build
+# =============================================================================
+
+services:
+
+  # ── PostgreSQL 15 ──────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: hotel_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: hotel_management_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d hotel_management_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ── Hotel API ──────────────────────────────────────────────────────────────
+  hotel-api:
+    build:
+      context: ..
+      dockerfile: deployments/Dockerfile
+    container_name: hotel_api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: "8080"
+      DATABASE_URL: "postgres://postgres:password@postgres:5432/hotel_management_db?sslmode=disable"
+      PROJECT_ROOT: "/app"
+      BASE_URL: "http://localhost:8080"
+      LOG_LEVEL: "info"
+      LOG_DIR: "/app/logs"
+      LOG_FILE_NAME: "hotel-management-system.log"
+    ports:
+      - "8080:8080"
+    volumes:
+      - api_logs:/app/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/v1/rooms/categories || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  postgres_data:
+  api_logs:

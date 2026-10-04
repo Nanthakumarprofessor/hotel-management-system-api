@@ -1,0 +1,46 @@
+# =============================================================================
+# Hotel Management System API - .gitignore
+# =============================================================================
+
+# ── Environment & Secrets ─────────────────────────────────────────────────────
+.env
+.env.*
+envs/.env.*
+!envs/.env.example
+
+# ── Go Binaries & Build Artifacts ─────────────────────────────────────────────
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+dist/
+/hotel-management-system
+/hotel-updated
+
+# ── Test & Coverage Artifacts ─────────────────────────────────────────────────
+*.out
+coverage.html
+coverage/
+.testcoverage/
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+logs/
+*.log
+
+# ── IDE & Editor Files ────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ── OS Files ──────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Temp / Scratch ────────────────────────────────────────────────────────────
+scratch/
+tmp/

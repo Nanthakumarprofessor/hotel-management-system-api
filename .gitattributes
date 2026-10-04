@@ -1,0 +1,22 @@
+# Enforce consistent LF line endings for all text files across platforms.
+* text=auto eol=lf
+
+# Go source files — always LF
+*.go text eol=lf
+
+# YAML, JSON, Markdown, shell scripts — always LF
+*.yaml text eol=lf
+*.yml  text eol=lf
+*.json text eol=lf
+*.md   text eol=lf
+*.sh   text eol=lf
+
+# Docker / env files — always LF
+Dockerfile    text eol=lf
+.env*         text eol=lf
+*.mod         text eol=lf
+*.sum         text eol=lf
+
+# Windows-specific binaries — do not modify
+*.exe  binary
+*.dll  binary
