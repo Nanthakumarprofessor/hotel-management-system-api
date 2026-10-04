@@ -360,6 +360,3 @@ Bookings are never hard-deleted. Setting `is_active = false` preserves audit his
 
 ---
 
-## License
-
-This project is open source and available under the [MIT License](LICENSE).
